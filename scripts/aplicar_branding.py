@@ -150,11 +150,20 @@ def _repr_str(dumper, s):
 yaml.SafeDumper.add_representer(str, _repr_str)
 
 
+def _claves_on(x):
+    """YAML 1.1 lee la clave `on:` como el booleano True. Pasa en la raíz del
+    workflow y también DENTRO de la matriz de RustDesk (`on: ubuntu-22.04-arm`,
+    que usa `runs-on: ${{ matrix.job.on }}`): si no se corrige en todas partes,
+    el job se queda sin máquina y GitHub ni lo crea."""
+    if isinstance(x, dict):
+        return {("on" if k is True else k): _claves_on(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_claves_on(v) for v in x]
+    return x
+
+
 def _cargar(f):
-    wf = yaml.safe_load(f.read_text(encoding="utf-8"))
-    if True in wf:  # YAML 1.1 lee la clave `on:` como booleano
-        wf["on"] = wf.pop(True)
-    return wf
+    return _claves_on(yaml.safe_load(f.read_text(encoding="utf-8")))
 
 
 def _volcar(wf, f, cabecera):
