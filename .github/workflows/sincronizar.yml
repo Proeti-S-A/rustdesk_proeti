@@ -1,0 +1,80 @@
+# Cada lunes mira si RustDesk ha sacado versión. Si la hay (o si ha subido
+# REVISION), prepara el árbol con la imagen de PROETI y sube la etiqueta
+# proeti-<versión>-r<revisión>. Esa etiqueta dispara por sí sola la compilación
+# (compilar.yml, que viaja DENTRO del árbol etiquetado).
+#
+# Compilar es automático; INSTALAR en la flota no: la versión sale como
+# "pre-release" y pasa a release solo después de probarla en una máquina.
+name: Sincronizar con RustDesk
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versión de RustDesk (p. ej. 1.4.9) o 'latest'"
+        default: latest
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sincronizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ¿Hay algo que compilar?
+        id: mira
+        env:
+          PEDIDA: ${{ inputs.version || 'latest' }}
+        run: |
+          if [ "$PEDIDA" = latest ]; then
+            VER=$(curl -fsSL https://api.github.com/repos/rustdesk/rustdesk/releases/latest | jq -r .tag_name)
+          else
+            VER="$PEDIDA"
+          fi
+          TAG="proeti-$VER-r$(tr -d '[:space:]' < REVISION)"
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG ya existe: nada que hacer."
+            echo "hacer=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nueva: $TAG"
+            echo "hacer=si" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Preparar el árbol con la imagen de PROETI
+        if: steps.mira.outputs.hacer == 'si'
+        run: |
+          pip install --quiet pyyaml
+          bash scripts/sincronizar.sh "${{ steps.mira.outputs.ver }}" "$RUNNER_TEMP/arbol"
+
+      # El GITHUB_TOKEN no puede subir commits que contengan workflows, ni lo
+      # que sube dispara otros workflows: por eso hace falta un token propio.
+      - name: Subir la etiqueta (dispara la compilación)
+        if: steps.mira.outputs.hacer == 'si'
+        env:
+          TOKEN: ${{ secrets.PROETI_PUSH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Falta el secret PROETI_PUSH_TOKEN (ver README, 'Puesta en marcha')"
+            exit 1
+          fi
+          git -C "$RUNNER_TEMP/arbol" push -q \
+            "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git" \
+            "refs/tags/${{ steps.mira.outputs.tag }}"
+
+      - name: Avisar si algo ha fallado
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --repo "${{ github.repository }}" \
+            --title "No se ha podido preparar ${{ steps.mira.outputs.tag }}" \
+            --body "Falló la sincronización con RustDesk ${{ steps.mira.outputs.ver }}: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Lo normal es que RustDesk haya cambiado el código que toca \`scripts/aplicar_branding.py\`: el log dice qué fichero y qué cambio ya no encajan."
