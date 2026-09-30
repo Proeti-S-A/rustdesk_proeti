@@ -32,6 +32,10 @@ cd "$ARBOL"
 # fija RustDesk; el checkout de la compilación lo trae de su repo.
 git checkout -q --orphan proeti
 git add -A
+# El .gitignore de RustDesk ignora `*png`: los ficheros NUEVOS de branding/
+# (logo_light.png, logo_dark.png, icon.png) no entrarían sin forzarlos, y el
+# build saldría sin logo sin dar ningún error.
+(cd "$RAIZ/branding" && find . -type f -print0) | xargs -0 git add -f --
 git -c user.name="PROETI Asistencia" -c user.email="noreply@proetisa.com" \
     commit -q -m "PROETI Asistencia r$REV sobre RustDesk $VER"
 git tag "$TAG"
