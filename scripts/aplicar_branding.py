@@ -106,6 +106,82 @@ def cambios_de_codigo(arbol):
               "Comment=Asistencia remota de PROETI", que="Comment del .desktop")
 
 
+def sesion_en_la_cabecera(arbol):
+    """La ventana de conexión no se enseña: la sesión la enseña la cabecera de la
+    interfaz del equipo, y el chat un panel a la derecha (proeti_interfaz,
+    core/asistencia.php).
+
+    Son piezas que van juntas. Ocultar la ventana sin publicar quién está dentro
+    dejaría al cliente sin saber que hay alguien en su máquina.
+    """
+    # 6. Ocultar la ventana. RustDesk ya sabe hacerlo (`hide_cm`, la parte de
+    #    Flutter la respeta entera: main.dart y server_model.dart), pero solo lo
+    #    permite a clientes de pago o con otro nombre interno, y el nuestro sigue
+    #    siendo «RustDesk» a propósito. Además exige aceptar solo por contraseña
+    #    permanente; aquí no hace falta: en el kiosko no hay nadie que pulse
+    #    «Aceptar», así que una conexión sin contraseña se queda sin atender.
+    #    `proeti-ver-recuadro = 'Y'` en [options] de RustDesk2.toml la vuelve a
+    #    enseñar, por si algún día hiciera falta.
+    sustituir(
+        arbol, "src/ipc.rs",
+        r'(\} else if name == "hide_cm" \{\n(\s*))'
+        r"value = if crate::hbbs_http::sync::is_pro\(\) \|\| crate::common::is_custom_client\(\)\s*"
+        r"\{\s*Some\(hbb_common::password_security::hide_cm\(\)\.to_string\(\)\)\s*"
+        r"\} else \{\s*None\s*\};",
+        r"\g<1>// PROETI Asistencia: la sesión se ve en la cabecera del equipo.\n"
+        r'\g<2>value = Some((Config::get_option("proeti-ver-recuadro") != "Y").to_string());',
+        que="ventana de conexión oculta (hide_cm)",
+    )
+    # 7. Publicar quién está dentro. El módulo es nuestro (codigo/src/); aquí solo
+    #    se declara y se llama cuando entra o sale una conexión.
+    destino = arbol / "src" / "proeti_asistencia.rs"
+    if destino.exists():
+        raise NoEncaja("src/proeti_asistencia.rs ya existe en RustDesk")
+    shutil.copyfile(RAIZ / "codigo" / "src" / "proeti_asistencia.rs", destino)
+    print("  ok  src/proeti_asistencia.rs")
+    sustituir(
+        arbol, "src/lib.rs", r"^mod ui_cm_interface;$",
+        "mod ui_cm_interface;\n// PROETI Asistencia: quién está conectado, para la cabecera del equipo.\n"
+        "mod proeti_asistencia;",
+        que="declarar el módulo proeti_asistencia",
+    )
+    for funcion, llamada in [("add_connection", "add_connection(&client)"),
+                             ("remove_connection", "remove_connection(id, close)")]:
+        sustituir(
+            arbol, "src/ui_cm_interface.rs",
+            rf"^([ \t]*)self\.ui_handler\.{re.escape(llamada)};$",
+            r"\g<0>\n\1crate::proeti_asistencia::publicar(&CLIENTS.read().unwrap());",
+            que=f"publicar las sesiones en {funcion}",
+        )
+    # 8. El chat también va a la interfaz: lo que escribe el técnico se apunta
+    #    para el panel del equipo (lo que escribe el equipo lo manda el propio
+    #    módulo, con send_chat).
+    sustituir(
+        arbol, "src/ui_cm_interface.rs",
+        r"^([ \t]*)self\.cm\.new_message\(self\.conn_id, text\);$",
+        r"\1crate::proeti_asistencia::chat_entrante(self.conn_id, &text);\n\g<0>",
+        que="apuntar el chat que llega del técnico",
+    )
+    # 9. Con la ventana oculta, RustDesk la volvería a sacar al llegar un mensaje
+    #    de chat (showCmWindow sin mirar hideCm) o una llamada de voz
+    #    (windowOnTop). El chat lo lleva la interfaz; la llamada de voz se queda
+    #    sin contestar, como una conexión sin contraseña.
+    sustituir(
+        arbol, "flutter/lib/models/chat_model.dart",
+        r"(if \(text\.isEmpty\) return;\n)([ \t]*)(if \(desktopType == DesktopType\.cm\) \{\n\s*await showCmWindow\(\);)",
+        r"\1\2// PROETI Asistencia: con la ventana oculta, el chat lo lleva la interfaz del equipo.\n"
+        r"\2if (desktopType == DesktopType.cm && session.serverModel.hideCm) return;\n\2\3",
+        que="el chat no vuelve a sacar la ventana oculta",
+    )
+    sustituir(
+        arbol, "flutter/lib/models/server_model.dart",
+        r"(// Has incoming phone call, let's set the window on top\.\n\s*Future\.delayed\(Duration\.zero, \(\) \{\n\s*)"
+        r"windowOnTop\(null\);",
+        r"\1if (!hideCm) windowOnTop(null);",
+        que="la llamada de voz no vuelve a sacar la ventana oculta",
+    )
+
+
 def svg_con_png(png):
     datos = base64.b64encode(png.read_bytes()).decode()
     return (
@@ -243,6 +319,7 @@ def main():
     print(f"PROETI Asistencia r{a.revision} sobre RustDesk {a.version}")
     try:
         cambios_de_codigo(arbol)
+        sesion_en_la_cabecera(arbol)
         imagenes(arbol)
         workflows(arbol, a.version, a.revision)
     except NoEncaja as e:

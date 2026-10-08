@@ -1,2 +1,4 @@
 # Árbol de trabajo que deja scripts/sincronizar.sh
 /arbol/
+# Caché de Python de scripts/
+__pycache__/

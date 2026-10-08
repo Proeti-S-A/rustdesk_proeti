@@ -21,6 +21,40 @@ Todo está en [`scripts/aplicar_branding.py`](scripts/aplicar_branding.py):
 | Logo (claro y oscuro), icono de la app, de la bandeja y del escritorio | [`branding/`](branding/) |
 | Sin aviso de «hay una versión nueva de RustDesk» (instalaría el paquete oficial encima) | `check_software_update` |
 | Servidor `support.proetisa.com` y su clave pública por defecto | [`scripts/servidor.py`](scripts/servidor.py), al compilar |
+| La **ventana de conexión no sale**: la sesión se ve en la cabecera de la interfaz del equipo | `hide_cm` en `ipc.rs`; `chat_model.dart` y `server_model.dart` para que el chat y la llamada de voz no la vuelvan a sacar |
+| El gestor de conexión publica **quién está dentro** y el **chat** en `/run/proeti-asistencia/`, y manda al técnico lo que el equipo contesta | [`codigo/src/proeti_asistencia.rs`](codigo/src/proeti_asistencia.rs), llamado desde `ui_cm_interface.rs` |
+
+### La sesión y el chat, en la interfaz del equipo (desde r2)
+
+En un kiosko, la ventana de conexión de RustDesk tapaba la interfaz. Ahora no
+se enseña nunca. Quien está dentro lo dice la propia interfaz de la máquina
+(`proeti_interfaz`: `core/asistencia.php`, el botón de asistencia de la
+cabecera), y el chat va en un panel a la derecha. Son piezas que van juntas.
+Ocultar la ventana sin publicar quién está dentro dejaría al cliente sin saber
+que hay alguien en su máquina.
+
+- Cada vez que entra o sale una conexión, el proceso `rustdesk --cm` escribe
+  `estado.json`: el ID y el nombre del técnico, el tipo (`pantalla`,
+  `archivos`, `tunel`, `terminal`, `camara`), los permisos y la hora de
+  entrada. Va con el `pid` del propio `--cm`, para que quien lo lea sepa si
+  sigue vivo.
+- **Chat.** Lo que escribe el técnico, y lo que se le contesta, queda en
+  `chat.json` (los últimos 200 mensajes, numerados). Para contestar, la
+  interfaz deja un `.json` por mensaje en `salida/`. Un hilo del propio `--cm`
+  lo recoge cada medio segundo, se lo manda al técnico con `send_chat` y lo
+  borra. Solo va a las conexiones que tienen chat (pantalla, archivos,
+  cámara), no a un túnel.
+- Las carpetas las crea `provision/63_asistencia.sh` (tmpfiles.d). La
+  principal es del usuario del kiosko y la lee www-data. `salida/` es del
+  grupo www-data (2770), para que la interfaz pueda dejar mensajes. Si no
+  existen, no se escribe nada y RustDesk funciona igual.
+- RustDesk solo deja ocultar la ventana si se acepta por contraseña
+  permanente. Aquí se oculta siempre: en el kiosko no hay nadie que pulse
+  «Aceptar», así que una conexión sin contraseña se queda sin atender. Lo
+  mismo pasa con una llamada de voz.
+- Para volver a ver la ventana: `proeti-ver-recuadro = 'Y'` en `[options]`
+  de `RustDesk2.toml` (root y kiosko, con el servicio parado, como hace
+  `40_services.sh`).
 
 Hay cosas que **no cambian, a propósito**. El nombre interno sigue siendo
 `rustdesk`, y con él el binario, el servicio, el paquete y la carpeta
@@ -40,7 +74,8 @@ medias.
 main (este repo)                         etiqueta proeti-1.4.9-r1
 ├─ scripts/aplicar_branding.py   ──►     árbol COMPLETO de RustDesk 1.4.9
 ├─ scripts/servidor.py                   + nuestros cambios
-├─ branding/                             + .github/workflows/compilar.yml
+├─ codigo/ (módulos nuestros)            + .github/workflows/compilar.yml
+├─ branding/
 ├─ REVISION                                (generado de SU flutter-build.yml,
 └─ .github/workflows/sincronizar.yml        solo Linux arm64)
 ```
