@@ -180,25 +180,28 @@ def sesion_en_la_cabecera(arbol):
         r"\1if (!hideCm) windowOnTop(null);",
         que="la llamada de voz no vuelve a sacar la ventana oculta",
     )
-    # 10. (r3) Tampoco al ARRANCAR. El lanzador de Linux enseñaba la ventana del
-    #     gestor nada más crearla, con opacidad 0, y Flutter la escondía después
-    #     (hideCmWindow). Sin compositor —el openbox del kiosko no tiene— la
-    #     opacidad no hace nada, así que durante el arranque de Flutter (unos 5 s
-    #     en el Odroid) el recuadro se veía entero. Ahora el gestor solo se
-    #     «realiza»: la enseña Flutter con windowManager.show() si no hay que
-    #     ocultarla (showCmWindow), que es lo que window_manager indica para
-    #     arrancar oculto en Linux. El resto de ventanas, como siempre.
+    # 10. (r4) Tampoco al ARRANCAR: el gestor de conexión arranca SIN interfaz.
+    #     Con la ventana oculta (6), el gestor con Flutter (`--cm`) la enseñaba
+    #     igual durante su arranque, unos 5 s en el Odroid: el lanzador de Linux
+    #     la saca con opacidad 0 y sin compositor (el openbox del kiosko no tiene)
+    #     eso no esconde nada. La r3 probó a no enseñarla (gtk_widget_realize) y
+    #     el gestor ni siquiera llegaba a arrancar: cada conexión dejaba otro
+    #     `--cm` colgado y nadie publicaba la sesión. Ahora el servicio lanza
+    #     `--cm-no-ui`, el modo que RustDesk ya tiene para equipos sin
+    #     escritorio: la misma lógica de conexiones (ConnectionManager, donde
+    #     publica proeti_asistencia), solo Rust, sin Flutter ni ventana, y
+    #     bastante menos memoria. Con `proeti-ver-recuadro = 'Y'`, el de siempre.
     sustituir(
-        arbol, "flutter/linux/my_application.cc",
-        r"^([ \t]*)gtk_widget_show\(GTK_WIDGET\(window\)\);\n(\1gtk_widget_show\(GTK_WIDGET\(view\)\);)$",
-        r"\1// PROETI Asistencia: el gestor de conexión arranca sin enseñarse (lo enseña\n"
-        r"\1// Flutter si toca); con la sesión en la cabecera del equipo, no sale nunca.\n"
-        r"\1if (gIsConnectionManager) {\n"
-        r"\1  gtk_widget_realize(GTK_WIDGET(window));\n"
-        r"\1} else {\n"
-        r"\1  gtk_widget_show(GTK_WIDGET(window));\n"
-        r"\1}\n\2",
-        que="el gestor de conexión no se enseña al arrancar",
+        arbol, "src/server/connection.rs",
+        r'^([ \t]*)let mut args = vec!\["--cm"\];$',
+        r"\1// PROETI Asistencia: el gestor de conexión sin interfaz (la sesión y el chat\n"
+        r"\1// los enseña la cabecera del equipo). Con proeti-ver-recuadro = 'Y', el de siempre.\n"
+        r'\1let mut args = if Config::get_option("proeti-ver-recuadro") == "Y" {' "\n"
+        r'\1    vec!["--cm"]' "\n"
+        r"\1} else {" "\n"
+        r'\1    vec!["--cm-no-ui"]' "\n"
+        r"\1};",
+        que="el gestor de conexión arranca sin interfaz",
     )
 
 

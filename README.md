@@ -22,7 +22,7 @@ Todo está en [`scripts/aplicar_branding.py`](scripts/aplicar_branding.py):
 | Sin aviso de «hay una versión nueva de RustDesk» (instalaría el paquete oficial encima) | `check_software_update` |
 | Servidor `support.proetisa.com` y su clave pública por defecto | [`scripts/servidor.py`](scripts/servidor.py), al compilar |
 | La **ventana de conexión no sale**: la sesión se ve en la cabecera de la interfaz del equipo | `hide_cm` en `ipc.rs`; `chat_model.dart` y `server_model.dart` para que el chat y la llamada de voz no la vuelvan a sacar |
-| …**ni siquiera al arrancar** (r3): el lanzador de Linux ya no la enseña con opacidad 0 mientras arranca Flutter (sin compositor, se veía unos 5 s); la enseña Flutter solo si toca | `flutter/linux/my_application.cc` (`gtk_widget_realize` para el gestor) |
+| …**ni siquiera al arrancar** (r4): el servicio lanza el gestor de conexión **sin interfaz** (`--cm-no-ui`, solo Rust). El de Flutter enseñaba la ventana ~5 s al arrancar (sin compositor, la opacidad 0 no la esconde); la r3 intentó no enseñarla y el gestor no llegaba a arrancar: **no usar la r3** | `src/server/connection.rs` |
 | El gestor de conexión publica **quién está dentro** y el **chat** en `/run/proeti-asistencia/`, y manda al técnico lo que el equipo contesta | [`codigo/src/proeti_asistencia.rs`](codigo/src/proeti_asistencia.rs), llamado desde `ui_cm_interface.rs` |
 
 ### La sesión y el chat, en la interfaz del equipo (desde r2)
